@@ -160,14 +160,14 @@ for (key in propertySchemasIndex) {
 }
 
 // Helper functions from feature-i18n
-function getLibrary(node) {
+function getLibrary(node: LibraryNode | undefined) {
   if (!node) throw new Meteor.Error('No node provided');
   const library = Libraries.findOne(node.root.id);
   if (!library) throw new Meteor.Error('Library does not exist');
   return library;
 }
 
-function assertNodeEditPermission(node, userId) {
+function assertNodeEditPermission(node: LibraryNode | undefined, userId: string | null) {
   const lib = getLibrary(node);
   return assertEditPermission(lib, userId);
 }
@@ -234,8 +234,8 @@ const updateLibraryNode = new ValidatedMethod({
   name: 'libraryNodes.update',
   validate({ _id, path }) {
     if (!_id) return false;
-    // Protected fields that cannot be changed with a simple update (from feature-i18n)
-    const protectedFields = ['type', 'parentId', 'root'];
+    // Protected fields that cannot be changed with a simple update
+    const protectedFields = ['type', 'parentId', 'root', 'left', 'right'];
     if (protectedFields.includes(path[0])) {
       return false;
     }
