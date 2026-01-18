@@ -161,9 +161,13 @@ for (key in propertySchemasIndex) {
 
 // Helper functions from feature-i18n
 function getLibrary(node: LibraryNode | undefined) {
-  if (!node) throw new Meteor.Error('No node provided');
+  if (!node) {
+    throw new Meteor.Error('library-node-not-found', 'Cannot get library: node not provided or not found');
+  }
   const library = Libraries.findOne(node.root.id);
-  if (!library) throw new Meteor.Error('Library does not exist');
+  if (!library) {
+    throw new Meteor.Error('library-not-found', `Library with id ${node.root.id} does not exist or was deleted`);
+  }
   return library;
 }
 
@@ -210,8 +214,8 @@ const insertNode = new ValidatedMethod({
     delete libraryNode._id;
 
     // Ensure required fields are present (from feature-i18n)
-    libraryNode.order = libraryNode.order || 0;
-    libraryNode.ancestors = libraryNode.ancestors || [];
+    libraryNode.order = libraryNode.order ?? 0;
+    libraryNode.ancestors = libraryNode.ancestors ?? [];
 
     // Insert the node
     const nodeId = LibraryNodes.insert(libraryNode);
