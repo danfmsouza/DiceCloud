@@ -96,6 +96,23 @@ const LibraryNodeSchema = TypedSimpleSchema.from({
     optional: true,
     max: STORAGE_LIMITS.calculation,
   },
+  // Fields for tree structure (from feature-i18n)
+  order: {
+    type: SimpleSchema.Integer,
+    optional: true,
+  },
+  ancestors: {
+    type: Array,
+    optional: true,
+  },
+  'ancestors.$': {
+    type: String,
+  },
+  parent: {
+    type: Object,
+    optional: true,
+    blackbox: true,
+  },
 });
 
 export type LibraryNodeTypes = {
@@ -142,6 +159,19 @@ for (key in propertySchemasIndex) {
   });
 }
 
+// Helper functions from feature-i18n
+function getLibrary(node) {
+  if (!node) throw new Meteor.Error('No node provided');
+  const library = Libraries.findOne(node.root.id);
+  if (!library) throw new Meteor.Error('Library does not exist');
+  return library;
+}
+
+function assertNodeEditPermission(node, userId) {
+  const lib = getLibrary(node);
+  return assertEditPermission(lib, userId);
+}
+
 const insertNode = new ValidatedMethod({
   name: 'libraryNodes.insert',
   validate: new SimpleSchema({
@@ -179,6 +209,10 @@ const insertNode = new ValidatedMethod({
     // server-side
     delete libraryNode._id;
 
+    // Ensure required fields are present (from feature-i18n)
+    libraryNode.order = libraryNode.order || 0;
+    libraryNode.ancestors = libraryNode.ancestors || [];
+
     // Insert the node
     const nodeId = LibraryNodes.insert(libraryNode);
 
@@ -200,14 +234,10 @@ const updateLibraryNode = new ValidatedMethod({
   name: 'libraryNodes.update',
   validate({ _id, path }) {
     if (!_id) return false;
-    // We cannot change these fields with a simple update
-    switch (path[0]) {
-      case 'type':
-      case 'root':
-      case 'left':
-      case 'right':
-      case 'parentId':
-        return false;
+    // Protected fields that cannot be changed with a simple update (from feature-i18n)
+    const protectedFields = ['type', 'parentId', 'root'];
+    if (protectedFields.includes(path[0])) {
+      return false;
     }
   },
   mixins: [RateLimiterMixin],
@@ -217,7 +247,7 @@ const updateLibraryNode = new ValidatedMethod({
   },
   run({ _id, path, value }) {
     let node = LibraryNodes.findOne(_id);
-    assertDocEditPermission(node, this.userId);
+    assertNodeEditPermission(node, this.userId);
     const pathString = path.join('.');
     let modifier;
     // unset empty values
@@ -247,7 +277,7 @@ const pushToLibraryNode = new ValidatedMethod({
   },
   run({ _id, path, value }) {
     const node = LibraryNodes.findOne(_id);
-    assertDocEditPermission(node, this.userId);
+    assertNodeEditPermission(node, this.userId);
     return LibraryNodes.update(_id, {
       $push: { [path.join('.')]: value },
     }, {
@@ -266,7 +296,7 @@ const pullFromLibraryNode = new ValidatedMethod({
   },
   run({ _id, path, itemId }) {
     const node = LibraryNodes.findOne(_id);
-    assertDocEditPermission(node, this.userId);
+    assertNodeEditPermission(node, this.userId);
     return LibraryNodes.update(_id, {
       $pull: { [path.join('.')]: { _id: itemId } },
     }, {
@@ -288,8 +318,25 @@ const softRemoveLibraryNode = new ValidatedMethod({
   },
   run({ _id }) {
     const node = LibraryNodes.findOne(_id);
-    assertDocEditPermission(node, this.userId);
+    assertNodeEditPermission(node, this.userId);
+    
+    // Soft remove the node itself
     softRemove(LibraryNodes, node);
+    
+    // Also soft remove child nodes using ancestors (from feature-i18n)
+    if (node.ancestors) {
+      LibraryNodes.update({
+        'ancestors': _id
+      }, {
+        $set: {
+          removed: true,
+          removedAt: new Date(),
+          removedBy: this.userId
+        }
+      }, {
+        multi: true
+      });
+    }
   }
 });
 
@@ -307,7 +354,7 @@ const restoreLibraryNode = new ValidatedMethod({
     // Permissions
     const node = LibraryNodes.findOne(_id);
     if (!node) return;
-    assertDocEditPermission(node, this.userId);
+    assertNodeEditPermission(node, this.userId);
     // Do work
     restore(LibraryNodes, node);
   }
