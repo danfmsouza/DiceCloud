@@ -319,24 +319,8 @@ const softRemoveLibraryNode = new ValidatedMethod({
   run({ _id }) {
     const node = LibraryNodes.findOne(_id);
     assertNodeEditPermission(node, this.userId);
-    
-    // Soft remove the node itself
+    // softRemove already handles removing descendants using nested sets
     softRemove(LibraryNodes, node);
-    
-    // Also soft remove child nodes using ancestors (from feature-i18n)
-    if (node.ancestors) {
-      LibraryNodes.update({
-        'ancestors': _id
-      }, {
-        $set: {
-          removed: true,
-          removedAt: new Date(),
-          removedBy: this.userId
-        }
-      }, {
-        multi: true
-      });
-    }
   }
 });
 
